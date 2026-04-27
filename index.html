@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DApp: Хранение данных (Лабораторная №14)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.10.0/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 40px; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; font-size: 24px; }
+        .status-box { padding: 15px; border-radius: 8px; background: #e8f4fd; margin-bottom: 20px; font-size: 14px; border-left: 5px solid #3498db; }
+        .card { border: 1px solid #eee; padding: 20px; border-radius: 8px; margin-top: 20px; background: #fafafa; }
+        button { width: 100%; background-color: #f6851b; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; transition: background 0.3s; margin-top: 10px; }
+        button:hover { background-color: #e2761b; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        input { width: 100%; padding: 12px; margin-top: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        .data-display { font-size: 20px; font-weight: bold; color: #27ae60; text-align: center; margin: 10px 0; }
+        .label { font-size: 12px; color: #7f8c8d; text-transform: uppercase; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Мини-проект DApp</h1>
+        
+        <div class="status-box">
+            <div class="label">Статус сети</div>
+            <div id="walletAddress">Кошелек не подключен</div>
+        </div>
+
+        <button id="connectBtn">Подключить MetaMask</button>
+
+        <div class="card">
+            <div class="label">Данные из смарт-контракта</div>
+            <div id="displayData" class="data-display">???</div>
+            <button id="readBtn">Обновить данные</button>
+        </div>
+
+        <div class="card">
+            <div class="label">Записать новое значение</div>
+            <input type="text" id="inputData" placeholder="Введите текст для сохранения...">
+            <button id="writeBtn">Отправить в блокчейн</button>
+        </div>
+    </div>
+
+    <script>
+        // ТВОЙ НАСТОЯЩИЙ АДРЕС В СЕТИ SEPOLIA
+        const contractAddress = "0x1A94AcF67882c7599B93A9a6E282cdFa59aB36c3";
+        
+        // ABI твоего контракта
+        const contractABI = [
+            {
+                "inputs": [{"internalType": "string", "name": "x", "type": "string"}],
+                "name": "set",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "get",
+                "outputs": [{"internalType": "string", "name": "", "type": "string"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "storedData",
+                "outputs": [{"internalType": "string", "name": "", "type": "string"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ];
+
+        let provider;
+        let signer;
+        let contract;
+
+        const connectBtn = document.getElementById("connectBtn");
+        const readBtn = document.getElementById("readBtn");
+        const writeBtn = document.getElementById("writeBtn");
+        const walletAddressDiv = document.getElementById("walletAddress");
+        const displayDataDiv = document.getElementById("displayData");
+        const inputData = document.getElementById("inputData");
+
+        // Функция подключения кошелька
+        async function connectWallet() {
+            if (window.ethereum) {
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    
+                    provider = new ethers.BrowserProvider(window.ethereum);
+                    signer = await provider.getSigner();
+                    
+                    contract = new ethers.Contract(contractAddress, contractABI, signer);
+                    
+                    walletAddressDiv.innerText = `Подключено: ${accounts[0].substring(0,6)}...${accounts[0].substring(38)}`;
+                    connectBtn.innerText = "Кошелек подключен";
+                    connectBtn.style.backgroundColor = "#27ae60";
+                    
+                    loadData();
+                } catch (error) {
+                    console.error("Ошибка подключения:", error);
+                    alert("Не удалось подключить MetaMask");
+                }
+            } else {
+                alert("Пожалуйста, установите MetaMask!");
+            }
+        }
+
+        // Чтение данных
+        async function loadData() {
+            if (!contract) return;
+            try {
+                const data = await contract.storedData();
+                displayDataDiv.innerText = data || "Пусто";
+            } catch (error) {
+                console.error("Ошибка при чтении:", error);
+            }
+        }
+
+        // Запись данных
+        async function saveData() {
+            const text = inputData.value;
+            if (!text) return alert("Введите текст");
+            if (!contract) return alert("Сначала подключите кошелек");
+
+            try {
+                writeBtn.disabled = true;
+                writeBtn.innerText = "Отправка (подтвердите в MetaMask)...";
+                
+                const tx = await contract.set(text);
+                console.log("Транзакция отправлена:", tx.hash);
+                
+                writeBtn.innerText = "Ожидание записи в блокчейн...";
+                await tx.wait(); // Ждем завершения транзакции
+                
+                writeBtn.disabled = false;
+                writeBtn.innerText = "Отправить в блокчейн";
+                inputData.value = "";
+                
+                alert("Успех! Данные записаны в блокчейн.");
+                loadData(); 
+            } catch (error) {
+                console.error("Ошибка при записи:", error);
+                alert("Ошибка! Проверьте, есть ли у вас Sepolia ETH и подтвердили ли вы транзакцию.");
+                writeBtn.disabled = false;
+                writeBtn.innerText = "Отправить в блокчейн";
+            }
+        }
+
+        connectBtn.onclick = connectWallet;
+        readBtn.onclick = loadData;
+        writeBtn.onclick = saveData;
+    </script>
+</body>
+</html>
